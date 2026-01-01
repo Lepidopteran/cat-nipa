@@ -1,8 +1,9 @@
 use std::{
     ffi::{OsStr, OsString},
-    io::Read,
-    os::unix::ffi::OsStrExt,
-    path::{Path, PathBuf},
+    fs::File,
+    io::{Read, Seek, SeekFrom, Write},
+    os::unix::ffi::{OsStrExt, OsStringExt},
+    path::PathBuf,
 };
 
 pub mod crypt_keys;
@@ -11,11 +12,12 @@ mod crypt;
 mod util;
 
 use crypt_keys::*;
+use log::debug;
 use util::{read_u8, read_u32_le};
 
-use crate::crypt::decrypt_header;
+use crate::crypt::{decrypt_data, decrypt_header};
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
 #[repr(u32)]
 #[non_exhaustive]
 pub enum Game {
@@ -94,10 +96,11 @@ pub struct NpaHead {
 #[derive(Debug, Clone, Default)]
 pub struct NpaEntry {
     pub name_length: u32,
+    pub file_name: OsString,
     pub file_path: PathBuf,
-    pub type_: i32,
+    pub type_: u8,
     pub file_id: u32,
-    pub offset: i32,
+    pub offset: u32,
     pub compressed_size: u32,
     pub original_size: u32,
 }
@@ -112,13 +115,6 @@ pub fn parse_head<R: Read>(reader: &mut R) -> Result<NpaHead, std::io::Error> {
     let mut magic = [0u8; 7];
     reader.read_exact(&mut magic)?;
 
-    if &magic[..4] != b"NPA\x01" {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "File does not seem to be a valid NPA file",
-        ));
-    }
-
     let key_1 = util::read_u32_le(reader)?;
     let key_2 = util::read_u32_le(reader)?;
     let compressed = util::read_u8(reader)? == 1;
@@ -130,7 +126,7 @@ pub fn parse_head<R: Read>(reader: &mut R) -> Result<NpaHead, std::io::Error> {
 
     let start = util::read_u32_le(reader)?;
 
-    Ok(NpaHead {
+    let header = NpaHead {
         head: magic,
         key_1,
         key_2,
@@ -140,21 +136,24 @@ pub fn parse_head<R: Read>(reader: &mut R) -> Result<NpaHead, std::io::Error> {
         folder_count,
         file_count,
         start,
-    })
+    };
+
+    debug!("Header: {:#?}", header);
+
+    Ok(header)
 }
 
-fn read_npa_entries<R: Read>(
+pub fn read_entries<R: Read>(
     reader: &mut R,
     header: &NpaHead,
-    total: usize,
     add_bytes_if_encrypted: bool,
 ) -> Result<Vec<NpaEntry>, std::io::Error> {
-    let mut entries = Vec::with_capacity(total);
+    let mut entries = Vec::with_capacity(header.total_count as usize);
 
-    for i in 0..total {
+    for i in 0..header.total_count as usize {
         let entry = read_entry(reader, i, header, add_bytes_if_encrypted)?;
 
-        log::debug!("Entry: {}", entry.file_path.display());
+        log::debug!("Path: {}", entry.file_path.display());
 
         entries.push(entry);
     }
@@ -182,15 +181,67 @@ pub fn read_entry<R: Read>(
         ));
     }
 
+    let fixed_path = file_name
+        .split(|b| *b == b'\\')
+        .filter(|b| !b.is_empty())
+        .map(OsStr::from_bytes)
+        .fold(PathBuf::new(), |p, c| p.join(c));
+
     Ok(NpaEntry {
         name_length: nlength as u32,
-        file_path: PathBuf::from(OsStr::from_bytes(&file_name)),
-        type_: read_u8(reader)? as i32,
+        file_path: fixed_path,
+        file_name: OsString::from_vec(file_name),
+        type_: read_u8(reader)?,
         file_id: read_u32_le(reader)?,
-        offset: read_u32_le(reader)? as i32,
+        offset: read_u32_le(reader)?,
         compressed_size: read_u32_le(reader)?,
         original_size: read_u32_le(reader)?,
     })
+}
+
+pub fn read_entry_data<R: Read + Seek>(
+    reader: &mut R,
+    header: &NpaHead,
+    entry: &NpaEntry,
+    game: Game,
+) -> Result<Vec<u8>, std::io::Error> {
+    reader.seek(SeekFrom::Start((entry.offset + header.start + 0x29) as u64))?;
+
+    let mut buffer = vec![0u8; entry.compressed_size as usize];
+    reader.read_exact(&mut buffer)?;
+
+    if header.encrypted {
+        let key = decrypt_data(entry, header, game);
+        let mut len = 0x1000;
+
+        if game != Game::Lamento && game != Game::LamentoTrail {
+            len += entry.file_name.len() as u32;
+        }
+
+        for x in 0..entry.compressed_size.min(len) {
+            buffer[x as usize] = match game {
+                Game::Lamento | Game::LamentoTrail => {
+                    game.encryption_key()[buffer[x as usize] as usize] - key
+                }
+
+                Game::Totono => {
+                    let mut r = buffer[x as usize];
+                    r = game.encryption_key()[r as usize];
+                    r = game.encryption_key()[r as usize];
+                    r = game.encryption_key()[r as usize];
+                    r = !r;
+
+                    r.wrapping_sub(key).wrapping_sub(x as u8)
+                }
+
+                _ => game.encryption_key()[buffer[x as usize] as usize]
+                    .wrapping_sub(key)
+                    .wrapping_sub(x as u8),
+            }
+        }
+    }
+
+    Ok(buffer)
 }
 
 #[cfg(test)]
