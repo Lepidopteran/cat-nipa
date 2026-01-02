@@ -43,13 +43,13 @@ pub fn decrypt_data(entry: &NpaEntry, header: &NpaHead, game: Game) -> u8 {
         _ => 0x87654321,
     };
 
-    for byte in entry.file_name.as_bytes() {
+    for byte in entry.un_decoded_file_path.as_bytes() {
         key_1 -= *byte as u32;
     }
 
     let key_2 = header.key_1.wrapping_mul(header.key_2);
 
-    let mut key = key_1.wrapping_mul(entry.file_name.len() as u32);
+    let mut key = key_1.wrapping_mul(entry.name_length);
 
     if game != Game::Lamento && game != Game::LamentoTrail {
         key = key.wrapping_add(key_2);

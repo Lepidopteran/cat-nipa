@@ -1,7 +1,6 @@
 use std::{
-    ffi::{OsStr, OsString},
-    fs::File,
-    io::{Read, Seek, SeekFrom, Write},
+    ffi::{OsString},
+    io::{Read, Seek, SeekFrom},
     os::unix::ffi::{OsStrExt, OsStringExt},
     path::PathBuf,
 };
@@ -12,6 +11,7 @@ mod crypt;
 mod util;
 
 use crypt_keys::*;
+use flate2::{read::ZlibDecoder};
 use log::debug;
 use util::{read_u8, read_u32_le};
 
@@ -96,13 +96,13 @@ pub struct NpaHead {
 #[derive(Debug, Clone, Default)]
 pub struct NpaEntry {
     pub name_length: u32,
-    pub file_name: OsString,
-    pub file_path: PathBuf,
     pub type_: u8,
     pub file_id: u32,
     pub offset: u32,
     pub compressed_size: u32,
     pub original_size: u32,
+    pub un_decoded_file_path: OsString,
+    pub file_path: PathBuf,
 }
 
 impl NpaEntry {
@@ -181,21 +181,34 @@ pub fn read_entry<R: Read>(
         ));
     }
 
-    let fixed_path = file_name
-        .split(|b| *b == b'\\')
-        .filter(|b| !b.is_empty())
-        .map(OsStr::from_bytes)
+    let decoded_path = util::decode_text(&file_name);
+
+    if decoded_path.had_errors() {
+        log::warn!("Failed to cleanly decode path: {}", decoded_path.text());
+    }
+
+    let file_path = decoded_path
+        .text()
+        .split('\\')
+        .filter(|s| !s.is_empty())
         .fold(PathBuf::new(), |p, c| p.join(c));
+
+    let type_ = read_u8(reader)?;
+    let file_id = read_u32_le(reader)?;
+    let offset = read_u32_le(reader)?;
+    let compressed_size = read_u32_le(reader)?;
+    let original_size = read_u32_le(reader)?;
+    let un_decoded_file_path = OsString::from_vec(file_name);
 
     Ok(NpaEntry {
         name_length: nlength as u32,
-        file_path: fixed_path,
-        file_name: OsString::from_vec(file_name),
-        type_: read_u8(reader)?,
-        file_id: read_u32_le(reader)?,
-        offset: read_u32_le(reader)?,
-        compressed_size: read_u32_le(reader)?,
-        original_size: read_u32_le(reader)?,
+        type_,
+        file_id,
+        offset,
+        compressed_size,
+        original_size,
+        un_decoded_file_path,
+        file_path,
     })
 }
 
@@ -215,7 +228,7 @@ pub fn read_entry_data<R: Read + Seek>(
         let mut len = 0x1000;
 
         if game != Game::Lamento && game != Game::LamentoTrail {
-            len += entry.file_name.len() as u32;
+            len += entry.un_decoded_file_path.len() as u32;
         }
 
         for x in 0..entry.compressed_size.min(len) {
@@ -241,7 +254,24 @@ pub fn read_entry_data<R: Read + Seek>(
         }
     }
 
-    Ok(buffer)
+    if header.compressed {
+        let mut z_buffer = Vec::with_capacity(entry.original_size as usize);
+        let mut decoder = ZlibDecoder::new(reader);
+
+        decoder.read_to_end(&mut z_buffer)?;
+
+        if z_buffer.len() != entry.original_size as usize {
+            eprintln!(
+                "Warning: decompressed size ({}) != expected size ({})",
+                z_buffer.len(),
+                entry.original_size
+            );
+        }
+
+        Ok(z_buffer)
+    } else {
+        Ok(buffer)
+    }
 }
 
 #[cfg(test)]
@@ -273,6 +303,41 @@ mod tests {
             func(entry)
         }
     }
+
+    // #[test]
+    // #[ignore]
+    // fn test_read_entry_data() {
+    //     archives(|entry| {
+    //         let path = entry.path();
+    //
+    //         info!("Reading \"{}\"...", path.display());
+    //
+    //         let mut reader = File::open(&path).unwrap();
+    //         let head = parse_head(&mut reader).unwrap();
+    //
+    //         assert!(Game::iter().any(|game| {
+    //             let entries = read_entries(
+    //                 &mut reader,
+    //                 &head,
+    //                 game == Game::Lamento || game == Game::LamentoTrail,
+    //             );
+    //
+    //             if let Ok(entries) = entries {
+    //                 let entry = entries
+    //                     .into_iter()
+    //                     .find(|e| !e.is_directory())
+    //                     .expect("Couldn't find entry that isn't a directory");
+    //
+    //                 let data = read_entry_data(&mut reader, &head, &entry, game)
+    //                     .expect("Couldn't read entry data");
+    //
+    //                 infer::get(&data).is_some() || !decode_text(&data).had_errors()
+    //             } else {
+    //                 false
+    //             }
+    //         }));
+    //     })
+    // }
 
     // NOTE: I'm not sure any of these tests are automatable, so I'm leaving it to manually checking at the output.
 
