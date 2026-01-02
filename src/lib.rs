@@ -247,28 +247,39 @@ pub fn read_entry_data<R: Read + Seek>(
 #[cfg(test)]
 mod tests {
     use log::{debug, info};
-    use std::{fs::File, path::PathBuf};
+    use std::{
+        fs::{DirEntry, File},
+        path::PathBuf,
+    };
     use test_log::test;
 
     use super::*;
 
-    // NOTE: I'm not sure any of these tests are automatable, so I'm leaving it to manually checking at the output.
-
-    #[test]
-    #[ignore]
-    fn test_parse_head() {
+    fn archives<F>(func: F)
+    where
+        F: Fn(DirEntry),
+    {
         let test_dir = PathBuf::from(format!(
             "{}/test_data/",
             std::env::var("CARGO_MANIFEST_DIR").unwrap()
         ));
 
         let dir = test_dir.read_dir().unwrap();
-
         for entry in dir.filter_map(Result::ok) {
             if entry.path().is_dir() || entry.path().extension() != Some("npa".as_ref()) {
                 continue;
             }
 
+            func(entry)
+        }
+    }
+
+    // NOTE: I'm not sure any of these tests are automatable, so I'm leaving it to manually checking at the output.
+
+    #[test]
+    #[ignore]
+    fn test_parse_head() {
+        archives(|entry| {
             let path = entry.path();
 
             info!("Reading \"{}\"...", path.display());
@@ -277,24 +288,13 @@ mod tests {
             let head = parse_head(&mut reader).unwrap();
 
             debug!("{:#?}", head);
-        }
+        })
     }
 
     #[test]
     #[ignore]
     fn test_read_entry() {
-        let test_dir = PathBuf::from(format!(
-            "{}/test_data/",
-            std::env::var("CARGO_MANIFEST_DIR").unwrap()
-        ));
-
-        let dir = test_dir.read_dir().unwrap();
-
-        for entry in dir.filter_map(Result::ok) {
-            if entry.path().is_dir() || entry.path().extension() != Some("npa".as_ref()) {
-                continue;
-            }
-
+        archives(|entry| {
             let path = entry.path();
 
             info!("Reading \"{}\"...", path.display());
@@ -315,6 +315,6 @@ mod tests {
                 normal_entry.file_path.display(),
                 normal_entry.is_directory()
             );
-        }
+        })
     }
 }
