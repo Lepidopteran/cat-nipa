@@ -1,6 +1,5 @@
 use std::{
     ffi::{OsStr, OsString},
-    fs::File,
     io::{Read, Seek, SeekFrom, Write},
     os::unix::ffi::{OsStrExt, OsStringExt},
     path::PathBuf,
