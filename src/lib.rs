@@ -139,7 +139,7 @@ pub fn parse_head<R: Read>(reader: &mut R) -> Result<NpaHead, std::io::Error> {
         start,
     };
 
-    debug!("Header: {:#?}", header);
+    debug!("Header: {:?}", header);
 
     Ok(header)
 }
@@ -153,8 +153,6 @@ pub fn read_entries<R: Read>(
 
     for i in 0..header.total_count as usize {
         let entry = read_entry(reader, i, header, add_bytes_if_encrypted)?;
-
-        log::debug!("Path: {}", entry.file_path.display());
 
         entries.push(entry);
     }
@@ -259,10 +257,12 @@ pub fn read_entry_data<R: Read + Seek>(
         let mut z_buffer = Vec::with_capacity(entry.original_size as usize);
         let mut decoder = ZlibDecoder::new(reader);
 
+        debug!("Decompressing \"{}\"", entry.file_path.display());
+
         decoder.read_to_end(&mut z_buffer)?;
 
         if z_buffer.len() != entry.original_size as usize {
-            eprintln!(
+            log::warn!(
                 "Warning: decompressed size ({}) != expected size ({})",
                 z_buffer.len(),
                 entry.original_size
@@ -282,6 +282,7 @@ mod tests {
         fs::{DirEntry, File},
         path::PathBuf,
     };
+    use strum::IntoEnumIterator;
     use test_log::test;
 
     use super::*;
