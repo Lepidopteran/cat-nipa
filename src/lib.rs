@@ -1,22 +1,19 @@
 use std::{
-    ffi::OsString,
     io::{Read, Seek, SeekFrom},
-    os::unix::ffi::{OsStrExt, OsStringExt},
     path::PathBuf,
 };
 
-pub mod crypt_keys;
-
-mod crypt;
-mod util;
-
+use crypt::{decrypt_data, decrypt_header};
 use crypt_keys::*;
 use flate2::read::ZlibDecoder;
 use log::debug;
 use strum_macros::EnumIter;
 use util::{read_u8, read_u32_le};
 
-use crate::crypt::{decrypt_data, decrypt_header};
+pub mod crypt_keys;
+
+mod crypt;
+mod util;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum, EnumIter)]
 #[non_exhaustive]
@@ -101,7 +98,7 @@ pub struct NpaEntry {
     pub offset: u32,
     pub compressed_size: u32,
     pub original_size: u32,
-    pub un_decoded_file_path: OsString,
+    pub un_decoded_file_path: Vec<u8>,
     pub file_path: PathBuf,
 }
 
@@ -196,7 +193,7 @@ pub fn read_entry<R: Read>(
     let offset = read_u32_le(reader)?;
     let compressed_size = read_u32_le(reader)?;
     let original_size = read_u32_le(reader)?;
-    let un_decoded_file_path = OsString::from_vec(file_name);
+    let un_decoded_file_path = file_name;
 
     Ok(NpaEntry {
         name_length: nlength as u32,
@@ -351,10 +348,7 @@ mod tests {
 
                 file_entry.is_some_and(|entry| {
                     if entry.file_path.extension().is_none() {
-                        log::warn!(
-                            "No extension for {:?}",
-                            entry.file_path.to_string_lossy()
-                        );
+                        log::warn!("No extension for {:?}", entry.file_path.to_string_lossy());
 
                         return false;
                     }
