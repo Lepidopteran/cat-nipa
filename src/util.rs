@@ -1,13 +1,52 @@
-use std::io::{self, Read};
+use std::io::{Read, Result};
 
-pub fn read_u32_le<R: Read>(r: &mut R) -> io::Result<u32> {
+use chardetng::EncodingDetector;
+use encoding_rs::Encoding;
+
+#[derive(Debug)]
+pub struct DecodedTextResult<'c> {
+    text: String,
+    encoding: &'c Encoding,
+    had_errors: bool,
+}
+
+impl<'c> DecodedTextResult<'c> {
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn encoding(&self) -> &'c Encoding {
+        self.encoding
+    }
+
+    pub fn had_errors(&self) -> bool {
+        self.had_errors
+    }
+}
+
+pub fn read_u32_le<R: Read>(r: &mut R) -> Result<u32> {
     let mut buf = [0u8; 4];
     r.read_exact(&mut buf)?;
     Ok(u32::from_le_bytes(buf))
 }
 
-pub fn read_u8<R: Read>(r: &mut R) -> io::Result<u8> {
+pub fn read_u8<R: Read>(r: &mut R) -> Result<u8> {
     let mut b = [0u8; 1];
     r.read_exact(&mut b)?;
     Ok(b[0])
+}
+
+pub fn decode_text(bytes: &[u8]) -> DecodedTextResult<'_> {
+    let mut encoding_detector = EncodingDetector::new();
+    encoding_detector.feed(bytes, true);
+
+    let encoding = encoding_detector.guess(None, true);
+
+    let (cow, _, had_errors) = encoding.decode(bytes);
+
+    DecodedTextResult {
+        text: cow.to_string(),
+        encoding,
+        had_errors,
+    }
 }
