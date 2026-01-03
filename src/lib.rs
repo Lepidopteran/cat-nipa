@@ -77,28 +77,62 @@ impl Game {
     }
 }
 
+/// Represents the header of an NPA (Nippon Ichi Archive) file
+/// Contains metadata about the archive structure
 #[derive(Debug)]
 pub struct NpaHead {
+    /// Magic number identifying the file format (7 bytes)
     pub head: [u8; 7],
+
+    /// First decryption key used for header decryption
     pub key_1: u32,
+
+    /// Second decryption key used for header decryption
     pub key_2: u32,
+
+    /// Indicates if the archive data is encrypted
     pub encrypted: bool,
+
+    /// Indicates if the archive data is compressed
     pub compressed: bool,
+
+    /// Total number of entries in the archive
     pub file_count: u32,
+
+    /// Number of directory entries in the archive
     pub folder_count: u32,
+
+    /// Total number of entries (files + directories)
     pub total_count: u32,
+
+    /// Offset to the start of the file entries
     pub start: u32,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct NpaEntry {
+    /// Length of the file name in bytes
     pub name_length: u32,
+
+    /// Type indicator (1 = directory, 0 = file)
     pub type_: u8,
+
+    /// Unique identifier for the file entry
     pub file_id: u32,
+
+    /// Offset from the start of the archive to this entry's data
     pub offset: u32,
+
+    /// Size of the compressed data (if compressed)
     pub compressed_size: u32,
+
+    /// Original size of the data before compression
     pub original_size: u32,
+
+    /// Raw byte representation of the file path (before decoding to UTF-8)
     pub un_decoded_file_path: Vec<u8>,
+
+    /// Decoded UTF-8 file path as a PathBuf
     pub file_path: PathBuf,
 }
 
