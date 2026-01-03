@@ -1,7 +1,7 @@
 use std::io::{Read, Result};
 
 use chardetng::EncodingDetector;
-use encoding_rs::Encoding;
+use encoding_rs::{Encoding, SHIFT_JIS};
 
 #[derive(Debug)]
 pub struct DecodedTextResult<'c> {
@@ -37,12 +37,7 @@ pub fn read_u8<R: Read>(r: &mut R) -> Result<u8> {
 }
 
 pub fn decode_text(bytes: &[u8]) -> DecodedTextResult<'_> {
-    let mut encoding_detector = EncodingDetector::new();
-    encoding_detector.feed(bytes, true);
-
-    let encoding = encoding_detector.guess(None, true);
-
-    let (cow, _, had_errors) = encoding.decode(bytes);
+    let (cow, encoding, had_errors) = SHIFT_JIS.decode(bytes);
 
     DecodedTextResult {
         text: cow.to_string(),

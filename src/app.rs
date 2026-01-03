@@ -7,6 +7,7 @@ use std::{
 use cat_nipa::{Game, NpaEntry, parse_head, read_entries, read_entry_data};
 use clap::Parser;
 use color_eyre::Result;
+use egui::{FontData, FontDefinitions, FontFamily};
 use egui_ltreeview::{Action, Activate};
 use indicatif::ProgressBar;
 use log::debug;
@@ -112,6 +113,29 @@ fn run_gui(args: Args) -> Result<()> {
                 entries: Vec::new(),
             };
 
+            let mut fonts = FontDefinitions::default();
+
+            fonts.font_data.insert(
+                "Pretendard".to_owned(),
+                std::sync::Arc::new(FontData::from_static(include_bytes!(
+                    "../assets/fonts/PretendardJP-Regular.otf"
+                ))),
+            );
+
+            fonts
+                .families
+                .get_mut(&FontFamily::Proportional)
+                .unwrap()
+                .push("Pretendard".to_owned());
+
+            fonts
+                .families
+                .get_mut(&FontFamily::Monospace)
+                .unwrap()
+                .push("Pretendard".to_owned());
+
+            cc.egui_ctx.set_fonts(fonts);
+
             if let Some(file_path) = &app.file {
                 let file = std::fs::File::open(file_path).unwrap();
                 let mut reader = std::io::BufReader::new(file);
@@ -182,9 +206,18 @@ impl eframe::App for App {
                             last_level = level;
 
                             if entry.is_directory() {
-                                builder.dir(index, format!("🗀 {}", entry.file_path.to_string_lossy()));
+                                builder
+                                    .dir(index, format!("🗀 {}", entry.file_path.to_string_lossy()));
                             } else {
-                                builder.leaf(index, entry.file_path.file_name().unwrap().to_string_lossy().to_string());
+                                builder.leaf(
+                                    index,
+                                    entry
+                                        .file_path
+                                        .file_name()
+                                        .unwrap()
+                                        .to_string_lossy()
+                                        .to_string(),
+                                );
                             }
                         }
                     });
