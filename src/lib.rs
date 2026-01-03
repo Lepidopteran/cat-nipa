@@ -300,11 +300,13 @@ pub fn read_entry_data<R: Read + Seek>(
 
 #[cfg(test)]
 mod tests {
-    use log::{debug, info};
     use std::{
         fs::{DirEntry, File},
+        ops::Not,
         path::PathBuf,
     };
+
+    use log::{debug, info};
     use strum::IntoEnumIterator;
     use test_log::test;
 
@@ -349,7 +351,10 @@ mod tests {
 
                 file_entry.is_some_and(|entry| {
                     if entry.file_path.extension().is_none() {
-                        log::warn!("No extension for \"{}\"", entry.file_path.display());
+                        log::warn!(
+                            "No extension for {:?}",
+                            entry.file_path.to_string_lossy()
+                        );
 
                         return false;
                     }
@@ -365,8 +370,8 @@ mod tests {
 
                     if data.is_err() {
                         log::error!(
-                            "Error reading entry data for \"{}\" - {}:\n\t{:#?}",
-                            entry.file_path.display(),
+                            "Error reading entry data for {:?} - {}:\n\t{:#?}",
+                            entry.file_path.to_string_lossy(),
                             data.err().unwrap(),
                             entry
                         );
@@ -376,11 +381,17 @@ mod tests {
 
                     data.is_ok_and(|data| {
                         if infer::is_supported(extension.as_str()) {
-                            debug!("Validating \"{}\" for file type", entry.file_path.display());
+                            debug!(
+                                "Validating {:?} for file type",
+                                entry.file_path.to_string_lossy()
+                            );
 
                             infer::is(&data, extension.as_str())
                         } else {
-                            debug!("Validating \"{}\" for UTF-8", entry.file_path.display());
+                            debug!(
+                                "Validating {:?} for UTF-8",
+                                entry.file_path.to_string_lossy()
+                            );
                             std::str::from_utf8(&data).is_ok()
                         }
                     })
@@ -389,7 +400,58 @@ mod tests {
         }));
     }
 
-    // NOTE: I'm not sure any of these tests are automatable, so I'm leaving it to manually checking at the output.
+    #[test]
+    #[ignore]
+    fn test_read_entry() {
+        assert!(archives().all(|entry| {
+            let path = entry.path();
+
+            info!("Reading \"{}\"...", path.display());
+
+            let mut add_bytes_reader = File::open(&path).unwrap();
+            let mut multiply_bytes_reader = File::open(&path).unwrap();
+
+            let add_bytes_head = parse_head(&mut add_bytes_reader).unwrap();
+            let multiply_bytes_head = parse_head(&mut multiply_bytes_reader).unwrap();
+
+            let add_file_entry = (0..add_bytes_head.total_count)
+                .find_map(|index| {
+                    let entry =
+                        read_entry(&mut add_bytes_reader, index as usize, &add_bytes_head, true);
+
+                    entry
+                        .ok()
+                        .and_then(|entry| entry.is_directory().not().then_some(entry))
+                })
+                .expect("No file entry could be found");
+
+            let multiply_file_entry = (0..multiply_bytes_head.total_count)
+                .find_map(|index| {
+                    let entry = read_entry(
+                        &mut multiply_bytes_reader,
+                        index as usize,
+                        &multiply_bytes_head,
+                        false,
+                    );
+
+                    entry
+                        .ok()
+                        .and_then(|entry| entry.is_directory().not().then_some(entry))
+                })
+                .expect("No file entry could be found");
+
+            debug!(
+                "Multiply Entry Result: {:?}, Add Entry Result: {:?}",
+                multiply_file_entry.file_path.to_string_lossy(),
+                add_file_entry.file_path.to_string_lossy(),
+            );
+
+            add_file_entry.file_path.extension().is_some()
+                || multiply_file_entry.file_path.extension().is_some()
+        }));
+    }
+
+    // NOTE: I'm not sure if this test is automatable, so I'm leaving it to manually checking at the output.
 
     #[test]
     #[ignore]
@@ -403,33 +465,6 @@ mod tests {
             let head = parse_head(&mut reader).unwrap();
 
             debug!("{:#?}", head);
-        });
-    }
-
-    #[test]
-    #[ignore]
-    fn test_read_entry() {
-        archives().for_each(|entry| {
-            let path = entry.path();
-
-            info!("Reading \"{}\"...", path.display());
-
-            let mut add_bytes_reader = File::open(&path).unwrap();
-            let mut normal_reader = File::open(&path).unwrap();
-
-            let add_head = parse_head(&mut add_bytes_reader).unwrap();
-            let normal_head = parse_head(&mut normal_reader).unwrap();
-
-            let add_bytes_entry = read_entry(&mut add_bytes_reader, 0, &add_head, true).unwrap();
-            let normal_entry = read_entry(&mut normal_reader, 0, &normal_head, false).unwrap();
-
-            debug!(
-                "\nOne of the entry names should be normal.\n\tDecrypted by Adding Bytes: {:?}, Is Directory: {} \n\tDecrypted by Multiplying Bytes: {:?}, Is Directory: {}",
-                add_bytes_entry.file_path.display(),
-                add_bytes_entry.is_directory(),
-                normal_entry.file_path.display(),
-                normal_entry.is_directory()
-            );
         });
     }
 }
