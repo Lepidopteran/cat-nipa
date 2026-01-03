@@ -287,29 +287,22 @@ mod tests {
 
     use super::*;
 
-    fn archives<F>(func: F)
-    where
-        F: Fn(DirEntry),
-    {
+    fn archives() -> impl Iterator<Item = DirEntry> {
         let test_dir = PathBuf::from(format!(
             "{}/test_data/",
             std::env::var("CARGO_MANIFEST_DIR").unwrap()
         ));
 
         let dir = test_dir.read_dir().unwrap();
-        for entry in dir.filter_map(Result::ok) {
-            if entry.path().is_dir() || entry.path().extension() != Some("npa".as_ref()) {
-                continue;
-            }
 
-            func(entry)
-        }
+        dir.filter_map(Result::ok)
+            .filter(|e| !e.path().is_dir() && e.path().extension() == Some("npa".as_ref()))
     }
 
     // #[test]
     // #[ignore]
     // fn test_read_entry_data() {
-    //     archives(|entry| {
+    //     assert!(archives().all(|entry| {
     //         let path = entry.path();
     //
     //         info!("Reading \"{}\"...", path.display());
@@ -317,28 +310,50 @@ mod tests {
     //         let mut reader = File::open(&path).unwrap();
     //         let head = parse_head(&mut reader).unwrap();
     //
-    //         assert!(Game::iter().any(|game| {
+    //         Game::iter().any(|game| {
     //             let entries = read_entries(
     //                 &mut reader,
     //                 &head,
     //                 game == Game::Lamento || game == Game::LamentoTrail,
     //             );
     //
-    //             if let Ok(entries) = entries {
+    //             entries.is_ok_and(|entries| {
     //                 let entry = entries
     //                     .into_iter()
     //                     .find(|e| !e.is_directory())
     //                     .expect("Couldn't find entry that isn't a directory");
     //
-    //                 let data = read_entry_data(&mut reader, &head, &entry, game)
-    //                     .expect("Couldn't read entry data");
+    //                 let data = read_entry_data(&mut reader, &head, &entry, game);
     //
-    //                 infer::get(&data).is_some() || !decode_text(&data).had_errors()
-    //             } else {
-    //                 false
-    //             }
-    //         }));
-    //     })
+    //                 if data.is_err() {
+    //
+    //                     debug!(
+    //                         "Error reading entry data for \"{}\" - {}",
+    //                         entry.file_path.display(),
+    //                         data.err().unwrap()
+    //                     );
+    //
+    //                     return false;
+    //                 }
+    //
+    //                 data.is_ok_and(|data| {
+    //                     let type_ = infer::get(&data);
+    //
+    //                     if type_.is_none() {
+    //                         let (text, _, had_errors) = encoding_rs::SHIFT_JIS.decode(&data);
+    //
+    //                         if !had_errors {
+    //                             debug!("Found Plain Text: {}", text);
+    //                         } else {
+    //                             debug!("No type for \"{}\"", entry.file_path.display());
+    //                         }
+    //                     }
+    //
+    //                     type_.is_some() || !util::decode_text(&data).had_errors()
+    //                 })
+    //             })
+    //         })
+    //     }));
     // }
 
     // NOTE: I'm not sure any of these tests are automatable, so I'm leaving it to manually checking at the output.
@@ -346,7 +361,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_parse_head() {
-        archives(|entry| {
+        archives().for_each(|entry| {
             let path = entry.path();
 
             info!("Reading \"{}\"...", path.display());
@@ -355,13 +370,13 @@ mod tests {
             let head = parse_head(&mut reader).unwrap();
 
             debug!("{:#?}", head);
-        })
+        });
     }
 
     #[test]
     #[ignore]
     fn test_read_entry() {
-        archives(|entry| {
+        archives().for_each(|entry| {
             let path = entry.path();
 
             info!("Reading \"{}\"...", path.display());
@@ -382,6 +397,6 @@ mod tests {
                 normal_entry.file_path.display(),
                 normal_entry.is_directory()
             );
-        })
+        });
     }
 }
