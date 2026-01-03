@@ -43,8 +43,8 @@ pub fn decrypt_data(entry: &NpaEntry, header: &NpaHead, game: Game) -> u8 {
         _ => 0x87654321,
     };
 
-    for byte in entry.un_decoded_file_path.as_bytes() {
-        key_1 -= *byte as u32;
+    for byte in entry.un_decoded_file_path.iter() {
+        key_1 = key_1.wrapping_sub(*byte as u32);
     }
 
     let key_2 = header.key_1.wrapping_mul(header.key_2);
