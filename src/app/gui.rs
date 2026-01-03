@@ -143,15 +143,11 @@ impl eframe::App for App {
                                         {
                                             "png" | "jpeg" | "jpg" | "gif" | "bmp" | "webp" => "🖻",
                                             "wav" | "ogg" | "flac" | "m4a" | "mp3" => "♫",
-                                            "mp4" | "mkv" | "webm" | "mov" | "avi" | "wmv" | "flv" | "ngs" => "🎞",
+                                            "mp4" | "mkv" | "webm" | "mov" | "avi" | "wmv"
+                                            | "flv" | "ngs" => "🎞",
                                             _ => "🗎",
                                         },
-                                        entry
-                                            .file_path
-                                            .file_name()
-                                            .unwrap()
-                                            .to_string_lossy()
-                                            .to_string()
+                                        entry.file_path.file_name().unwrap().to_string_lossy()
                                     ),
                                 );
                             }
