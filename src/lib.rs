@@ -18,8 +18,7 @@ use util::{read_u8, read_u32_le};
 
 use crate::crypt::{decrypt_data, decrypt_header};
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum, EnumIter)]
-#[repr(u32)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum, EnumIter)]
 #[non_exhaustive]
 pub enum Game {
     ChaosHead,
@@ -217,6 +216,7 @@ pub fn read_entry_data<R: Read + Seek>(
     entry: &NpaEntry,
     game: Game,
 ) -> Result<Vec<u8>, std::io::Error> {
+    log::debug!("Reading \"{}\"", entry.file_path.display());
     reader.seek(SeekFrom::Start((entry.offset + header.start + 0x29) as u64))?;
 
     let mut buffer = vec![0u8; entry.compressed_size as usize];
@@ -233,7 +233,7 @@ pub fn read_entry_data<R: Read + Seek>(
         for x in 0..entry.compressed_size.min(len) {
             buffer[x as usize] = match game {
                 Game::Lamento | Game::LamentoTrail => {
-                    game.encryption_key()[buffer[x as usize] as usize] - key
+                    game.encryption_key()[buffer[x as usize] as usize].wrapping_sub(key)
                 }
 
                 Game::Totono => {
@@ -263,16 +263,39 @@ pub fn read_entry_data<R: Read + Seek>(
 
         if z_buffer.len() != entry.original_size as usize {
             log::warn!(
-                "Warning: decompressed size ({}) != expected size ({})",
+                "Warning while decompressing \"{}\": decompressed size ({}) != expected size ({})",
+                entry.file_path.display(),
                 z_buffer.len(),
                 entry.original_size
             );
         }
 
-        Ok(z_buffer)
-    } else {
-        Ok(buffer)
+        buffer = z_buffer;
     }
+
+    let extension = entry
+        .file_path
+        .extension()
+        .ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "Entry has no extension")
+        })?
+        .to_string_lossy()
+        .to_lowercase();
+
+    let can_infer = infer::is_supported(extension.as_str());
+
+    if !can_infer {
+        debug!("Decoding \"{}\"", entry.file_path.display());
+
+        let result = util::decode_text(&buffer);
+        if result.had_errors() {
+            log::warn!("Failed to cleanly decode file: {}", result.text());
+        }
+
+        buffer = result.text().as_bytes().to_vec();
+    }
+
+    Ok(buffer)
 }
 
 #[cfg(test)]
@@ -299,62 +322,72 @@ mod tests {
             .filter(|e| !e.path().is_dir() && e.path().extension() == Some("npa".as_ref()))
     }
 
-    // #[test]
-    // #[ignore]
-    // fn test_read_entry_data() {
-    //     assert!(archives().all(|entry| {
-    //         let path = entry.path();
-    //
-    //         info!("Reading \"{}\"...", path.display());
-    //
-    //         let mut reader = File::open(&path).unwrap();
-    //         let head = parse_head(&mut reader).unwrap();
-    //
-    //         Game::iter().any(|game| {
-    //             let entries = read_entries(
-    //                 &mut reader,
-    //                 &head,
-    //                 game == Game::Lamento || game == Game::LamentoTrail,
-    //             );
-    //
-    //             entries.is_ok_and(|entries| {
-    //                 let entry = entries
-    //                     .into_iter()
-    //                     .find(|e| !e.is_directory())
-    //                     .expect("Couldn't find entry that isn't a directory");
-    //
-    //                 let data = read_entry_data(&mut reader, &head, &entry, game);
-    //
-    //                 if data.is_err() {
-    //
-    //                     debug!(
-    //                         "Error reading entry data for \"{}\" - {}",
-    //                         entry.file_path.display(),
-    //                         data.err().unwrap()
-    //                     );
-    //
-    //                     return false;
-    //                 }
-    //
-    //                 data.is_ok_and(|data| {
-    //                     let type_ = infer::get(&data);
-    //
-    //                     if type_.is_none() {
-    //                         let (text, _, had_errors) = encoding_rs::SHIFT_JIS.decode(&data);
-    //
-    //                         if !had_errors {
-    //                             debug!("Found Plain Text: {}", text);
-    //                         } else {
-    //                             debug!("No type for \"{}\"", entry.file_path.display());
-    //                         }
-    //                     }
-    //
-    //                     type_.is_some() || !util::decode_text(&data).had_errors()
-    //                 })
-    //             })
-    //         })
-    //     }));
-    // }
+    #[test]
+    #[ignore]
+    fn test_read_entry_data() {
+        assert!(archives().all(|entry| {
+            let path = entry.path();
+
+            info!("Reading \"{}\"...", path.display());
+
+            Game::iter().any(|game| {
+                debug!("Trying with {game:?}");
+                let mut reader = File::open(&path).unwrap();
+                let head = parse_head(&mut reader).unwrap();
+
+                let file_entry = (0..head.total_count).find_map(|index| {
+                    let entry = read_entry(
+                        &mut reader,
+                        index as usize,
+                        &head,
+                        game == Game::Lamento || game == Game::LamentoTrail,
+                    )
+                    .unwrap();
+
+                    (!entry.is_directory()).then_some(entry)
+                });
+
+                file_entry.is_some_and(|entry| {
+                    if entry.file_path.extension().is_none() {
+                        log::warn!("No extension for \"{}\"", entry.file_path.display());
+
+                        return false;
+                    }
+
+                    let extension = entry
+                        .file_path
+                        .extension()
+                        .expect("Entry has no extension")
+                        .to_string_lossy()
+                        .to_lowercase();
+
+                    let data = read_entry_data(&mut reader, &head, &entry, game);
+
+                    if data.is_err() {
+                        log::error!(
+                            "Error reading entry data for \"{}\" - {}:\n\t{:#?}",
+                            entry.file_path.display(),
+                            data.err().unwrap(),
+                            entry
+                        );
+
+                        return false;
+                    }
+
+                    data.is_ok_and(|data| {
+                        if infer::is_supported(extension.as_str()) {
+                            debug!("Validating \"{}\" for file type", entry.file_path.display());
+
+                            infer::is(&data, extension.as_str())
+                        } else {
+                            debug!("Validating \"{}\" for UTF-8", entry.file_path.display());
+                            std::str::from_utf8(&data).is_ok()
+                        }
+                    })
+                })
+            })
+        }));
+    }
 
     // NOTE: I'm not sure any of these tests are automatable, so I'm leaving it to manually checking at the output.
 
