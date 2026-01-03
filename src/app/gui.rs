@@ -120,17 +120,39 @@ impl eframe::App for App {
                             last_level = level;
 
                             if entry.is_directory() {
-                                builder
-                                    .dir(index, format!("🗀 {}", entry.file_path.to_string_lossy()));
+                                builder.dir(
+                                    index,
+                                    format!(
+                                        "🗀 {}",
+                                        entry.file_path.file_name().unwrap().to_string_lossy()
+                                    ),
+                                );
                             } else {
                                 builder.leaf(
                                     index,
-                                    entry
-                                        .file_path
-                                        .file_name()
-                                        .unwrap()
-                                        .to_string_lossy()
-                                        .to_string(),
+                                    format!(
+                                        "{} {}",
+                                        match entry
+                                            .file_path
+                                            .extension()
+                                            .map(|extension| extension
+                                                .to_string_lossy()
+                                                .to_string())
+                                            .unwrap_or("".to_string())
+                                            .as_str()
+                                        {
+                                            "png" | "jpeg" | "jpg" | "gif" | "bmp" | "webp" => "🖻",
+                                            "wav" | "ogg" | "flac" | "m4a" | "mp3" => "♫",
+                                            "mp4" | "mkv" | "webm" | "mov" | "avi" | "wmv" | "flv" | "ngs" => "🎞",
+                                            _ => "🗎",
+                                        },
+                                        entry
+                                            .file_path
+                                            .file_name()
+                                            .unwrap()
+                                            .to_string_lossy()
+                                            .to_string()
+                                    ),
                                 );
                             }
                         }
