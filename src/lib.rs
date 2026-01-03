@@ -1,5 +1,5 @@
 use std::{
-    ffi::{OsString},
+    ffi::OsString,
     io::{Read, Seek, SeekFrom},
     os::unix::ffi::{OsStrExt, OsStringExt},
     path::PathBuf,
@@ -11,13 +11,14 @@ mod crypt;
 mod util;
 
 use crypt_keys::*;
-use flate2::{read::ZlibDecoder};
+use flate2::read::ZlibDecoder;
 use log::debug;
+use strum_macros::EnumIter;
 use util::{read_u8, read_u32_le};
 
 use crate::crypt::{decrypt_data, decrypt_header};
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum, EnumIter)]
 #[repr(u32)]
 #[non_exhaustive]
 pub enum Game {
