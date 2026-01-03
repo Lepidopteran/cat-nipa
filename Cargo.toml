@@ -32,7 +32,8 @@ log = "0.4.29"
 indicatif = { version = "0.18.3", features = ["rayon"], optional = true}
 clap = { version = "4.5.53", features = ["derive"], optional = true}
 env_logger = { version = "0.11.8", optional = true }
-egui_extras = { version = "0.33.3", features = ["serde"], optional = true }
+egui_extras = { version = "0.33.3", features = ["serde", "all_loaders"], optional = true }
+image = { version = "0.25", features = ["jpeg", "png", "gif", "tiff", "webp", "bmp"] }
 egui = { version = "0.33.3", optional = true }
 eframe = { version = "0.33.3", features = ["serde", "wgpu"], optional = true }
 color-eyre = { version = "0.6.5", optional = true }

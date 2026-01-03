@@ -1,6 +1,5 @@
 use std::io::{Read, Result};
 
-use chardetng::EncodingDetector;
 use encoding_rs::{Encoding, SHIFT_JIS};
 
 #[derive(Debug)]

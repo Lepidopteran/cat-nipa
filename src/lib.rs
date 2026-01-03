@@ -79,7 +79,7 @@ impl Game {
 
 /// Represents the header of an NPA (Nippon Ichi Archive) file
 /// Contains metadata about the archive structure
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct NpaHead {
     /// Magic number identifying the file format (7 bytes)
     pub head: [u8; 7],
