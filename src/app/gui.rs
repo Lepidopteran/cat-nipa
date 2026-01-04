@@ -12,6 +12,8 @@ use std::{
 };
 use strum::IntoEnumIterator;
 
+mod image_viewer;
+
 pub fn run(args: Args) -> Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -68,10 +70,8 @@ struct App {
     game: Option<Game>,
     entries: Vec<NpaEntry>,
     selected: Vec<usize>,
-    prev_selected: Vec<usize>,
     cached_data: HashMap<usize, Vec<u8>>,
     cached_textures: HashMap<usize, TextureHandle>,
-    multiply_encrypted_bytes: bool,
     auto_select_game_on_failure: bool,
 }
 
@@ -106,7 +106,6 @@ impl App {
             entries,
             file_path: Some(file_path),
             auto_select_game_on_failure: true,
-            multiply_encrypted_bytes: add_encrypted_bytes,
             ..Default::default()
         }
     }
@@ -144,7 +143,10 @@ impl App {
             .get(&key)
             .ok_or_else(|| eyre!("Data not cached"))?;
 
-        let entry = self.entries.get(key).ok_or_else(|| eyre!("Entry not found"))?;
+        let entry = self
+            .entries
+            .get(key)
+            .ok_or_else(|| eyre!("Entry not found"))?;
 
         if !infer::is_image(data) {
             return Err(eyre!("Data is not an image"));
@@ -353,10 +355,10 @@ impl eframe::App for App {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            if let Some(entry_index) = self.selected.first()
-                && let Ok(texture) = self.get_texture(*entry_index, ctx)
+            if let Some(entry_index) = self.selected.first().cloned()
+                && let Ok(texture) = self.get_texture(entry_index, ctx)
             {
-                ui.image(texture);
+                image_viewer::image_viewer(ui.make_persistent_id(format!("image-viewer-{entry_index}")), ui, texture);
             }
         });
 
