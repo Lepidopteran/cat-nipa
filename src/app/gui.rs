@@ -144,6 +144,8 @@ impl App {
             .get(&key)
             .ok_or_else(|| eyre!("Data not cached"))?;
 
+        let entry = self.entries.get(key).ok_or_else(|| eyre!("Entry not found"))?;
+
         if !infer::is_image(data) {
             return Err(eyre!("Data is not an image"));
         }
@@ -154,7 +156,7 @@ impl App {
         let pixels = image_buffer.as_flat_samples();
 
         let texture = context.load_texture(
-            "image",
+            entry.file_path.display().to_string(),
             egui::ColorImage::from_rgba_unmultiplied(size, pixels.as_slice()),
             egui::TextureOptions::NEAREST,
         );
