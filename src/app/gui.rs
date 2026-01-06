@@ -358,7 +358,23 @@ impl eframe::App for App {
             if let Some(entry_index) = self.selected.first().cloned()
                 && let Ok(texture) = self.get_texture(entry_index, ctx)
             {
-                image_viewer::image_viewer(ui.make_persistent_id(format!("image-viewer-{entry_index}")), ui, texture);
+                let id = ui.make_persistent_id(format!("image-viewer-{entry_index}"));
+
+                ui.horizontal(|ui| {
+                    let mut state = ui
+                        .ctx()
+                        .data_mut(|data| data.get_persisted::<image_viewer::ImageViewerState>(id))
+                        .unwrap_or_default();
+
+                    ui.label(format!("Zoom: {:.2}", state.zoom));
+                    if ui.button("Fit to View").clicked() {
+                        state.fitted_to_view = false;
+                    }
+
+                    ui.ctx().data_mut(|data| data.insert_persisted(id, state));
+                });
+
+                image_viewer::image_viewer(id, ui, texture);
             }
         });
 

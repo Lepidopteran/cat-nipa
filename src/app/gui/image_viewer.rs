@@ -1,13 +1,13 @@
 use egui::Id;
 
 #[derive(Default, Clone)]
-struct ImageViewerState {
-    fitted_to_view: bool,
-    offset: egui::Vec2,
-    zoom: f32,
+pub struct ImageViewerState {
+    pub fitted_to_view: bool,
+    pub offset: egui::Vec2,
+    pub zoom: f32,
 }
 
-fn fit_to_view(state: &mut ImageViewerState, rect: egui::Rect, texture: &egui::TextureHandle) {
+pub fn fit_to_view(state: &mut ImageViewerState, rect: egui::Rect, texture: &egui::TextureHandle) {
     let image_size = texture.size_vec2();
     let view_size = rect.size();
 
