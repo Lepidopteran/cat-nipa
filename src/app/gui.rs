@@ -2,15 +2,18 @@ use super::Args;
 
 use cat_nipa::{Game, NpaEntry, parse_head, read_entries, read_entry, read_entry_data};
 use color_eyre::{Result, eyre::eyre};
-use egui::{ColorImage, FontData, FontDefinitions, FontFamily, TextureHandle, ahash::HashMap};
+use egui::{FontData, FontDefinitions, FontFamily, TextureHandle, ahash::HashMap};
 use egui_ltreeview::Action;
 use log::debug;
 use std::{
     fs::File,
     ops::Not,
-    path::{Component, Path, PathBuf},
+    path::{Component, PathBuf},
 };
 use strum::IntoEnumIterator;
+
+#[cfg(feature = "app")]
+use rfd::FileDialog;
 
 mod image_viewer;
 
@@ -115,6 +118,48 @@ impl App {
             game,
             auto_select_game_on_failure: true,
             ..Default::default()
+        }
+    }
+
+    pub fn open_file_dialog(&mut self) {
+        #[cfg(feature = "app")]
+        {
+            let file_path = FileDialog::new()
+                .add_filter("NPA Archive", &["npa"])
+                .pick_file();
+
+            if let Some(path) = file_path {
+                self.file_path = Some(path);
+                self.game = None; // Reset game selection when opening new file
+
+                // Try to parse the file
+                if let Ok(mut temp_reader) = File::open(self.file_path.clone().unwrap())
+                    && let Ok(temp_header) = parse_head(&mut temp_reader)
+                {
+                    let add_encrypted_bytes = (0..temp_header.total_count)
+                        .find_map(|index| {
+                            let entry =
+                                read_entry(&mut temp_reader, index as usize, &temp_header, true);
+
+                            entry
+                                .ok()
+                                .and_then(|entry| entry.is_directory().not().then_some(entry))
+                        })
+                        .expect("No file entry could be found")
+                        .file_path
+                        .extension()
+                        .is_some();
+
+                    if let Ok(mut file) = File::open(self.file_path.clone().unwrap())
+                        && let Ok(header) = parse_head(&mut file)
+                        && let Ok(mut entries) =
+                            read_entries(&mut file, &header, add_encrypted_bytes)
+                    {
+                        entries.sort_by_key(|b| b.file_path.clone());
+                        self.entries = entries;
+                    }
+                }
+            }
         }
     }
 
@@ -232,11 +277,52 @@ impl App {
 }
 
 impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Show welcome screen if no file is loaded
+        if self.file_path.is_none() {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                // Use vertical centered layout
+                ui.vertical_centered(|ui| {
+                    ui.add_space(60.0);
+
+                    // Title
+                    ui.heading("📦 Cat Nipa");
+                    ui.add_space(15.0);
+
+                    // Subtitle
+                    ui.label("A visual novel archive extractor");
+                    ui.add_space(20.0);
+
+                    // Instructions
+                    ui.label("Open a .npa archive file to get started:");
+                    ui.add_space(30.0);
+
+                    // Open file button - use centered layout for the button
+                    ui.add_space(15.0);
+                    if ui
+                        .add(
+                            egui::Button::new("📂 Open NPA File")
+                                .min_size(egui::Vec2::new(200.0, 45.0)),
+                        )
+                        .clicked()
+                    {
+                        self.open_file_dialog();
+                    }
+
+                    ui.add_space(40.0);
+                });
+            });
+            return;
+        }
+
+        // Main GUI with file loaded
         egui::SidePanel::left("left_panel").show(ctx, |ui| {
             ui.heading("Cat Nipa");
 
             if let Some(file_path) = &self.file_path.clone() {
+                if ui.button("Open Another File").clicked() {
+                    self.open_file_dialog();
+                }
                 ui.label(file_path.to_string_lossy().to_string());
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (_, actions) = egui_ltreeview::TreeView::new("entries".into())
@@ -321,8 +407,19 @@ impl eframe::App for App {
                                 let mut file = File::open(file_path).expect("Failed to open file");
                                 let head = parse_head(&mut file).expect("Failed to parse head");
 
-                                let data =
-                                    read_entry_data(&mut file, &head, &entry, self.game.unwrap());
+                                // If game is not selected, try to auto-select it
+                                let game = if let Some(game) = self.game {
+                                    game
+                                } else {
+                                    log::warn!("No game selected, attempting auto-selection...");
+                                    if let Err(err) = self.auto_select_game(*index) {
+                                        log::error!("Failed to auto-select game: {}", err);
+                                        continue;
+                                    }
+                                    self.game.expect("Auto-select should have set a game")
+                                };
+
+                                let data = read_entry_data(&mut file, &head, &entry, game);
 
                                 let valid = data.as_ref().is_ok_and(|data| {
                                     is_valid_data(
